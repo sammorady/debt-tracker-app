@@ -1,117 +1,148 @@
+/* Base */
+:root {
+  --bg: #f4f4f4;
+  --card: #fff;
+  --text: #333;
+  --muted: #ccc;
+  --primary: #007bff;
+  --primary-dark: #0056b3;
+  --success: #28a745;
+  --success-dark: #218838;
+  --danger: #dc3545;
+  --danger-bg: #ffe5e8;
+  --shadow: 0 0 10px rgba(0,0,0,.1);
+}
+
+* { box-sizing: border-box; }
+
 body {
   font-family: Arial, sans-serif;
-  background-color: #f4f4f4;
+  background-color: var(--bg);
+  color: var(--text);
   margin: 0;
   padding: 20px;
 }
 
 h1 {
   text-align: center;
-  color: #333;
+  margin: 0 0 10px;
 }
 
-/* ---------- AUTH SECTION ---------- */
+/* Auth panel */
 #auth {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   max-width: 800px;
-  margin: 0 auto 15px auto;
-  background: #fff;
+  margin: 0 auto 15px;
+  background: var(--card);
   padding: 10px;
   border-radius: 8px;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 0 6px rgba(0,0,0,.08);
 }
 
 #auth input,
 #auth button {
   padding: 8px 10px;
   font-size: 0.95rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--muted);
   border-radius: 5px;
 }
 
 #auth button {
-  background-color: #28a745;
-  color: white;
+  background-color: var(--success);
+  color: #fff;
   border: none;
   cursor: pointer;
+  transition: background-color .2s ease;
 }
+#auth button:hover { background-color: var(--success-dark); }
 
-#auth button:hover {
-  background-color: #218838;
-}
-
-/* ---------- DEBT FORM ---------- */
+/* Form */
 form {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   max-width: 800px;
   margin: 20px auto;
-  background: #fff;
+  background: var(--card);
   padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow);
 }
 
 form input,
 form button {
   padding: 10px;
   font-size: 1rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--muted);
   border-radius: 5px;
 }
 
-form input {
-  flex: 1 1 150px;
-}
+form input { flex: 1 1 150px; }
 
 form button {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--primary);
+  color: #fff;
   border: none;
   cursor: pointer;
   flex: 1 1 100%;
-  transition: background-color 0.2s ease;
+  transition: background-color .2s ease;
 }
+form button:hover { background-color: var(--primary-dark); }
 
-form button:hover {
-  background-color: #0056b3;
-}
-
-/* ---------- TABLE ---------- */
+/* Table */
 table {
   width: 90%;
   margin: 20px auto;
   border-collapse: collapse;
-  background: white;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 thead {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--primary);
+  color: #fff;
 }
 
 th, td {
   padding: 12px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--muted);
   text-align: center;
 }
 
-tbody tr:nth-child(even) {
-  background-color: #f9f9f9;
+tbody tr:nth-child(even) { background-color: #f9f9f9; }
+
+/* Totals row */
+tfoot th {
+  font-weight: 700;
+  background: #fafafa;
 }
 
-/* ---------- RESPONSIVE ---------- */
-@media (max-width: 600px) {
-  form input, form button, #auth input, #auth button {
-    flex: 1 1 100%;
-  }
+/* Action buttons */
+.btn {
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  border: 1px solid var(--muted);
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+.btn:hover { background: #f0f0f0; }
+
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover {
+  background: var(--danger-bg);
 }
 
-tbody tr:nth-child(even) {
-  background-color: #f9f9f9;
+/* Responsive */
+@media (max-width: 700px) {
+  form input, form button, #auth input, #auth button { flex: 1 1 100%; }
+  table { width: 100%; }
+  th, td { padding: 10px; font-size: .95rem; }
 }
 
