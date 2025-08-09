@@ -10,6 +10,39 @@ h1 {
   color: #333;
 }
 
+/* ---------- AUTH SECTION ---------- */
+#auth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 800px;
+  margin: 0 auto 15px auto;
+  background: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.08);
+}
+
+#auth input,
+#auth button {
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+#auth button {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+#auth button:hover {
+  background-color: #218838;
+}
+
+/* ---------- DEBT FORM ---------- */
 form {
   display: flex;
   flex-wrap: wrap;
@@ -40,12 +73,14 @@ form button {
   border: none;
   cursor: pointer;
   flex: 1 1 100%;
+  transition: background-color 0.2s ease;
 }
 
 form button:hover {
   background-color: #0056b3;
 }
 
+/* ---------- TABLE ---------- */
 table {
   width: 90%;
   margin: 20px auto;
@@ -68,3 +103,15 @@ th, td {
 tbody tr:nth-child(even) {
   background-color: #f9f9f9;
 }
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width: 600px) {
+  form input, form button, #auth input, #auth button {
+    flex: 1 1 100%;
+  }
+}
+
+tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
