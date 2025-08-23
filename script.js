@@ -1,67 +1,69 @@
-// ---------- UI ELEMENTS ----------
+// ================== CONFIG ==================
+const REQUIRE_LOGIN = false; // set true if you want to force login before using the app
+
+// ================== UI ELEMENTS ==================
 const debtForm = document.getElementById('debt-form');
 const debtTable = document.getElementById('debt-table');
 const debtTableBody = document.querySelector('#debt-table tbody');
 
-// Auth inputs/buttons (optional if you added auth UI)
+// Optional auth elements (only if you use Firebase)
 const emailEl = document.getElementById('email');
 const passEl  = document.getElementById('password');
 const signup  = document.getElementById('signup');
 const login   = document.getElementById('login');
 const logout  = document.getElementById('logout');
 
-// ---------- HELPERS ----------
+// ================== HELPERS ==================
 function fmtCurrency(n) {
   const num = Number(n);
   return isFinite(num) ? `$${num.toFixed(2)}` : '$0.00';
 }
-
 function fmtDate(v) {
   if (!v) return '';
   const d = new Date(v);
   return isNaN(d) ? String(v) : d.toLocaleDateString('en-US'); // MM/DD/YYYY
 }
-
-function percentPaid(original, balance) {
-  const o = Number(original), b = Number(balance);
+function paidToDate(debt) {
+  if (isFinite(Number(debt.amountPaid))) return Number(debt.amountPaid);
+  if (isFinite(Number(debt.originalAmount)) && isFinite(Number(debt.balance))) {
+    return Math.max(0, Number(debt.originalAmount) - Number(debt.balance));
+  }
+  return 0;
+}
+function percentPaidFor(debt) {
+  const o = Number(debt.originalAmount);
+  const paid = paidToDate(debt);
   if (!isFinite(o) || o <= 0) return '0.00';
-  return (((o - b) / o) * 100).toFixed(2);
+  return ((paid / o) * 100).toFixed(2);
 }
-
 function sum(nums){ return nums.reduce((a,b)=>a + (isFinite(+b)? +b : 0), 0); }
-
-function setText(id, text){
-  const el = document.getElementById(id);
-  if (el) el.textContent = text;
-}
-
+function setText(id, text){ const el = document.getElementById(id); if (el) el.textContent = text; }
 function updateTotals(rows){
   const totOriginal = sum(rows.map(r => r.originalAmount));
   const totBalance  = sum(rows.map(r => r.balance));
+  const totPaid     = sum(rows.map(paidToDate));
   const totMinPay   = sum(rows.map(r => r.minPayment));
   setText('tot-original', fmtCurrency(totOriginal));
   setText('tot-balance',  fmtCurrency(totBalance));
+  setText('tot-paid',     fmtCurrency(totPaid));
   setText('tot-minpay',   fmtCurrency(totMinPay));
 }
 
-// ---------- FIREBASE (expects compat scripts + config in index.html) ----------
-/*
-  index.html must include firebase-app-compat, firebase-auth-compat, firebase-firestore-compat
-  and initialize:
-    firebase.initializeApp(firebaseConfig);
-    window._auth = firebase.auth();
-    window._db   = firebase.firestore();
-*/
-if (!window._auth || !window._db) {
-  console.warn('Firebase not initialized. Add compat scripts + config in index.html if using auth/cloud.');
-}
-const auth = window._auth;
-const db   = window._db;
+// ================== FIREBASE WIRING (optional) ==================
+// In index.html, Firebase is initialized into window._auth and window._db if config is present.
+const auth = window._auth || null;
+const db   = window._db   || null;
 
 let currentUser = null;
 let debtsUnsub = null;
 
-// ---------- AUTH WIRES (optional) ----------
+function toggleApp(visible) {
+  if (debtForm)  debtForm.style.display  = visible ? 'block' : 'none';
+  if (debtTable) debtTable.style.display = visible ? 'table' : 'none';
+  if (logout)    logout.style.display    = visible ? 'inline-block' : 'none';
+}
+
+// AUTH (only if you added the auth UI)
 signup?.addEventListener('click', async () => {
   if (!auth) return alert('Auth not set up.');
   await auth.createUserWithEmailAndPassword(emailEl.value.trim(), passEl.value);
@@ -75,29 +77,27 @@ logout?.addEventListener('click', async () => {
   await auth.signOut();
 });
 
-// Toggle UI visibility based on auth
-function toggleApp(visible) {
-  if (debtForm) debtForm.style.display = visible ? 'block' : 'none';
-  if (debtTable) debtTable.style.display = visible ? 'table' : 'none';
-  if (logout) logout.style.display = visible ? 'inline-block' : 'none';
-}
-
+// If Firebase exists, watch auth; else local mode
 if (auth) {
   auth.onAuthStateChanged(user => {
     currentUser = user || null;
-    toggleApp(!!user);
+    toggleApp(REQUIRE_LOGIN ? !!user : true);
 
     if (debtsUnsub) { debtsUnsub(); debtsUnsub = null; }
     if (user) startUserListener(user.uid);
-    else { debtTableBody.innerHTML = ''; updateTotals([]); }
+    else {
+      debtTableBody.innerHTML = '';
+      updateTotals([]);
+      if (!REQUIRE_LOGIN) renderDebtsLocal();
+    }
   });
 } else {
-  console.warn('Running in local-only mode.');
-  renderDebtsLocal();
+  console.warn("Running in local-only mode (no Firebase configured).");
   toggleApp(true);
+  renderDebtsLocal();
 }
 
-// ---------- FIRESTORE SYNC ----------
+// ================== REMOTE (Firestore) ==================
 function startUserListener(uid) {
   debtsUnsub = db
     .collection('users').doc(uid).collection('debts')
@@ -117,23 +117,24 @@ function renderDebtsRemote(debts) {
       <td>${debt.name ?? ''}</td>
       <td>${fmtCurrency(debt.originalAmount)}</td>
       <td>${fmtCurrency(debt.balance)}</td>
+      <td>${fmtCurrency(paidToDate(debt))}</td>
       <td>${Number(debt.apr || 0).toFixed(2)}%</td>
       <td>${fmtCurrency(debt.minPayment)}</td>
       <td>${fmtDate(debt.dueDate)}</td>
-      <td>${percentPaid(debt.originalAmount, debt.balance)}%</td>
-      <td><button class="btn btn-danger" data-del-id="${debt.id}">Delete</button></td>
+      <td>${percentPaidFor(debt)}%</td>
+      <td>
+        <button class="btn" data-edit-id="${debt.id}">Edit</button>
+        <button class="btn btn-danger" data-del-id="${debt.id}">Delete</button>
+      </td>
     `;
     debtTableBody.appendChild(row);
   });
   updateTotals(debts);
 }
 
-// ---------- LOCAL FALLBACK ----------
+// ================== LOCAL (fallback) ==================
 let localDebts = JSON.parse(localStorage.getItem('debts') || '[]');
-
-function saveDebtsLocal() {
-  localStorage.setItem('debts', JSON.stringify(localDebts));
-}
+function saveDebtsLocal() { localStorage.setItem('debts', JSON.stringify(localDebts)); }
 
 function renderDebtsLocal() {
   debtTableBody.innerHTML = '';
@@ -143,40 +144,94 @@ function renderDebtsLocal() {
       <td>${debt.name}</td>
       <td>${fmtCurrency(debt.originalAmount)}</td>
       <td>${fmtCurrency(debt.balance)}</td>
+      <td>${fmtCurrency(paidToDate(debt))}</td>
       <td>${Number(debt.apr || 0).toFixed(2)}%</td>
       <td>${fmtCurrency(debt.minPayment)}</td>
       <td>${fmtDate(debt.dueDate)}</td>
-      <td>${percentPaid(debt.originalAmount, debt.balance)}%</td>
-      <td><button class="btn btn-danger" data-del-local="${i}">Delete</button></td>
+      <td>${percentPaidFor(debt)}%</td>
+      <td>
+        <button class="btn" data-edit-local="${i}">Edit</button>
+        <button class="btn btn-danger" data-del-local="${i}">Delete</button>
+      </td>
     `;
     debtTableBody.appendChild(row);
   });
   updateTotals(localDebts);
 }
 
-// ---------- FORM SUBMIT ----------
+// ================== EDIT SUPPORT ==================
+let editing = { id: null, idx: null };
+
+function fillFormFromDebt(d) {
+  document.getElementById('debt-name').value = d.name || '';
+  document.getElementById('original-amount').value = d.originalAmount ?? '';
+  document.getElementById('balance').value = d.balance ?? '';
+  document.getElementById('amount-paid').value = d.amountPaid ?? '';
+  document.getElementById('apr').value = d.apr ?? '';
+  document.getElementById('min-payment').value = d.minPayment ?? '';
+  document.getElementById('due-date').value = d.dueDate || '';
+  const btn = debtForm.querySelector('button[type="submit"]');
+  if (btn) btn.textContent = 'Save Changes';
+}
+function clearEditingState() {
+  editing = { id: null, idx: null };
+  const btn = debtForm.querySelector('button[type="submit"]');
+  if (btn) btn.textContent = 'Add Debt';
+  debtForm.reset();
+}
+
+// ================== FORM SUBMIT (Add / Update) ==================
 debtForm.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const name = document.getElementById('debt-name').value.trim();
   const originalAmount = parseFloat(document.getElementById('original-amount').value);
-  const balance = parseFloat(document.getElementById('balance').value);
+  let   balance = parseFloat(document.getElementById('balance').value);
+  const amountPaid = parseFloat(document.getElementById('amount-paid').value || '0');
   const apr = parseFloat(document.getElementById('apr').value || '0');
   const minPayment = parseFloat(document.getElementById('min-payment').value || '0');
-  const dueDate = document.getElementById('due-date').value; // yyyy-mm-dd
+  const dueDate = document.getElementById('due-date').value;
 
-  if (!name || !isFinite(originalAmount) || !isFinite(balance)) {
-    alert('Please enter valid values.'); return;
+  if (!name || !isFinite(originalAmount)) {
+    alert('Please enter a name and a valid original amount.');
+    return;
   }
 
-  // If logged in -> Firestore; else -> localStorage
-  if (currentUser && db) {
+  // If balance missing but amountPaid provided, derive balance
+  if (!isFinite(balance) && isFinite(amountPaid)) {
+    balance = Math.max(0, originalAmount - amountPaid);
+  }
+  if (!isFinite(balance)) {
+    alert('Please enter a valid balance or amount paid.');
+    return;
+  }
+
+  const payload = { name, originalAmount, balance, amountPaid, apr, minPayment, dueDate };
+
+  // UPDATE (remote)
+  if (editing.id && currentUser && db) {
+    await db.collection('users').doc(currentUser.uid).collection('debts')
+      .doc(editing.id).update(payload);
+    clearEditingState();
+    return;
+  }
+  // UPDATE (local)
+  if (editing.idx !== null && editing.idx !== undefined) {
+    localDebts[editing.idx] = { ...localDebts[editing.idx], ...payload };
+    saveDebtsLocal();
+    renderDebtsLocal();
+    clearEditingState();
+    return;
+  }
+
+  // ADD (remote vs local)
+  if (currentUser && db && (REQUIRE_LOGIN ? currentUser : true)) {
     await db.collection('users').doc(currentUser.uid).collection('debts').add({
-      name, originalAmount, balance, apr, minPayment, dueDate,
+      ...payload,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   } else {
-    localDebts.push({ name, originalAmount, balance, apr, minPayment, dueDate });
+    localDebts.push(payload);
     saveDebtsLocal();
     renderDebtsLocal();
   }
@@ -184,7 +239,7 @@ debtForm.addEventListener('submit', async (e) => {
   debtForm.reset();
 });
 
-// ---------- DELETE (event delegation) ----------
+// ================== TABLE ACTIONS (Edit/Delete) ==================
 document.getElementById('debt-table').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
@@ -194,17 +249,41 @@ document.getElementById('debt-table').addEventListener('click', async (e) => {
   if (delId && currentUser && db) {
     await db.collection('users').doc(currentUser.uid)
       .collection('debts').doc(delId).delete();
-    return; // snapshot will re-render + totals
+    return;
+  }
+
+  // Remote edit
+  const editId = btn.getAttribute('data-edit-id');
+  if (editId && currentUser && db) {
+    const docRef = await db.collection('users').doc(currentUser.uid)
+      .collection('debts').doc(editId).get();
+    if (docRef.exists) {
+      editing = { id: editId, idx: null };
+      fillFormFromDebt(docRef.data());
+    }
+    return;
   }
 
   // Local delete
-  const idx = btn.getAttribute('data-del-local');
-  if (idx !== null) {
-    localDebts.splice(Number(idx), 1);
+  const idxDel = btn.getAttribute('data-del-local');
+  if (idxDel !== null) {
+    localDebts.splice(Number(idxDel), 1);
     saveDebtsLocal();
     renderDebtsLocal();
+    return;
+  }
+
+  // Local edit
+  const idxEdit = btn.getAttribute('data-edit-local');
+  if (idxEdit !== null) {
+    editing = { id: null, idx: Number(idxEdit) };
+    fillFormFromDebt(localDebts[editing.idx]);
+    return;
   }
 });
 
-// If no Firebase (or not logged in), show local data on load
-if (!auth) renderDebtsLocal();
+// Initial local render if no Firebase or login not required
+if (!auth || (!REQUIRE_LOGIN && !currentUser)) {
+  toggleApp(true);
+  renderDebtsLocal();
+}
