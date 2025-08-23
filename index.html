@@ -9,27 +9,40 @@
 <body>
   <h1>Debt Tracker</h1>
 
+  <!-- AUTH PANEL (optional; works only if you add Firebase config below) -->
+  <div id="auth">
+    <input id="email" type="email" placeholder="Email" />
+    <input id="password" type="password" placeholder="Password" />
+    <button id="signup" type="button">Sign Up</button>
+    <button id="login" type="button">Log In</button>
+    <button id="logout" type="button" style="display:none">Log Out</button>
+  </div>
+
+  <!-- DEBT FORM -->
   <form id="debt-form">
     <input type="text" id="debt-name" placeholder="Debt Name" required />
-    <input type="number" id="original-amount" placeholder="Original Amount" required />
-    <input type="number" id="balance" placeholder="Current Balance" required />
+    <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" required />
+    <input type="number" id="balance" placeholder="Current Balance" step="0.01" />
+    <input type="number" id="amount-paid" placeholder="Amount Paid (to date)" step="0.01" />
     <input type="number" id="apr" placeholder="APR (%)" step="0.01" />
     <input type="number" id="min-payment" placeholder="Min. Payment" step="0.01" />
     <input type="date" id="due-date" />
     <button type="submit">Add Debt</button>
   </form>
 
+  <!-- TABLE -->
   <table id="debt-table">
     <thead>
       <tr>
         <th>Debt</th>
         <th>Original</th>
         <th>Balance</th>
+        <th>Paid</th>
         <th>APR %</th>
         <th>Min. Payment</th>
         <th>Due</th>
         <th>% Paid</th>
-        <th>Actions</th> <!-- NEW -->
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -38,6 +51,7 @@
         <th>Total</th>
         <th id="tot-original">$0.00</th>
         <th id="tot-balance">$0.00</th>
+        <th id="tot-paid">$0.00</th>
         <th></th>
         <th id="tot-minpay">$0.00</th>
         <th colspan="3"></th>
@@ -45,9 +59,29 @@
     </tfoot>
   </table>
 
+  <!-- Firebase (optional). Keep block; replace placeholders if you want login/cloud save -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+    // ===== REPLACE THESE VALUES WITH YOUR REAL FIREBASE CONFIG (or leave blank to run local-only) =====
+    const firebaseConfig = {
+      apiKey: "🔴 REPLACE_WITH_YOUR_API_KEY",
+      authDomain: "🔴 REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
+      projectId: "🔴 REPLACE_WITH_YOUR_PROJECT_ID"
+    };
+    // Only initialize if user filled config:
+    if (firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain) {
+      firebase.initializeApp(firebaseConfig);
+      window._auth = firebase.auth();
+      window._db   = firebase.firestore();
+    } else {
+      window._auth = null;
+      window._db   = null;
+      console.warn("Firebase config not provided. Running in local-only mode.");
+    }
+  </script>
+
   <script src="script.js"></script>
 </body>
 </html>
-
-
-
