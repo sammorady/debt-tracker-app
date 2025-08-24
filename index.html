@@ -27,9 +27,11 @@
     <input type="number" id="apr" placeholder="APR (%)" step="0.01" min="0" inputmode="decimal"/>
     <input type="number" id="min-payment" placeholder="Min. Payment" step="0.01" min="0" inputmode="decimal"/>
 
-    <!-- Due Date (fixed: explicit label + proper date input) -->
-    <label for="due-date" style="position:absolute;left:-9999px;">Due Date</label>
-    <input type="date" id="due-date" />
+    <!-- Due Date (visible label + date input) -->
+    <div class="field">
+      <label for="due-date">Due Date</label>
+      <input type="date" id="due-date" />
+    </div>
 
     <button type="submit">Add Debt</button>
   </form>
