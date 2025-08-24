@@ -11,15 +11,17 @@
 
   <!-- AUTH PANEL (optional; only works if Firebase config is filled) -->
   <div id="auth">
+    <!-- The user-display span is now created by JavaScript if needed -->
     <input id="email" type="email" placeholder="Email" autocomplete="email" />
     <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
     <button id="signup" type="button">Sign Up</button>
     <button id="login" type="button">Log In</button>
+    <!-- Logout button starts hidden, revealed by JS -->
     <button id="logout" type="button" style="display:none">Log Out</button>
   </div>
 
-  <!-- DEBT FORM -->
-  <form id="debt-form" autocomplete="off">
+  <!-- DEBT FORM - Starts hidden until a user logs in -->
+  <form id="debt-form" autocomplete="off" style="display:none">
     <input type="text" id="debt-name" placeholder="Debt Name" required />
     <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" min="0" required inputmode="decimal"/>
     <input type="number" id="balance" placeholder="Current Balance" step="0.01" min="0" inputmode="decimal"/>
@@ -36,7 +38,7 @@
     <button type="submit">Add Debt</button>
   </form>
 
-  <!-- TABLE -->
+  <!-- TABLE - You might also want to hide this if no one is logged in initially -->
   <table id="debt-table">
     <thead>
       <tr>
