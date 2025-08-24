@@ -1,100 +1,102 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Debt Tracker</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <h1>Debt Tracker</h1>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    sendEmailVerification
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-  <!-- AUTH PANEL (optional; only works if Firebase config is filled) -->
-  <div id="auth">
-    <!-- The user-display span is now created by JavaScript if needed -->
-    <input id="email" type="email" placeholder="Email" autocomplete="email" />
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-    <button id="signup" type="button">Sign Up</button>
-    <button id="login" type="button">Log In</button>
-    <!-- Logout button starts hidden, revealed by JS -->
-    <button id="logout" type="button" style="display:none">Log Out</button>
-  </div>
+  // 1) INIT
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_APP_ID"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
 
-  <!-- DEBT FORM - Starts hidden until a user logs in -->
-  <form id="debt-form" autocomplete="off" style="display:none">
-    <input type="text" id="debt-name" placeholder="Debt Name" required />
-    <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" min="0" required inputmode="decimal"/>
-    <input type="number" id="balance" placeholder="Current Balance" step="0.01" min="0" inputmode="decimal"/>
-    <input type="number" id="amount-paid" placeholder="Amount Paid (to date)" step="0.01" min="0" inputmode="decimal"/>
-    <input type="number" id="apr" placeholder="APR (%)" step="0.01" min="0" inputmode="decimal"/>
-    <input type="number" id="min-payment" placeholder="Min. Payment" step="0.01" min="0" inputmode="decimal"/>
+  // 2) DOM HOOKS
+  const emailEl = document.getElementById('email');
+  const passEl  = document.getElementById('password');
+  const signupBtn = document.getElementById('signup');
+  const loginBtn  = document.getElementById('login');
+  const logoutBtn = document.getElementById('logout');
+  const authPanel = document.getElementById('auth');
+  const debtForm  = document.getElementById('debt-form');
 
-    <!-- Due Date (visible label + date input) -->
-    <div class="field">
-      <label for="due-date">Due Date</label>
-      <input type="date" id="due-date" />
-    </div>
-
-    <button type="submit">Add Debt</button>
-  </form>
-
-  <!-- TABLE - You might also want to hide this if no one is logged in initially -->
-  <table id="debt-table">
-    <thead>
-      <tr>
-        <th>Debt</th>
-        <th>Original</th>
-        <th>Balance</th>
-        <th>Paid</th>
-        <th>APR %</th>
-        <th>Min. Payment</th>
-        <th>Due</th>
-        <th>% Paid</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-    <tfoot>
-      <tr>
-        <th>Total</th>
-        <th id="tot-original">$0.00</th>
-        <th id="tot-balance">$0.00</th>
-        <th id="tot-paid">$0.00</th>
-        <th></th>
-        <th id="tot-minpay">$0.00</th>
-        <th colspan="3"></th>
-      </tr>
-    </tfoot>
-  </table>
-
-  <!-- Firebase (optional). Keep block; replace placeholders if you want login/cloud save -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-  <script>
-    // ===== REPLACE THESE VALUES WITH YOUR REAL FIREBASE CONFIG (or leave placeholders for local-only) =====
-    const firebaseConfig = {
-      apiKey: "REPLACE_WITH_YOUR_API_KEY",
-      authDomain: "REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
-      projectId: "REPLACE_WITH_YOUR_PROJECT_ID"
-    };
-    // Only initialize if config looks filled:
-    const looksConfigured =
-      firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("REPLACE_") &&
-      firebaseConfig.projectId && !firebaseConfig.projectId.startsWith("REPLACE_") &&
-      firebaseConfig.authDomain && !firebaseConfig.authDomain.startsWith("REPLACE_");
-
-    if (looksConfigured) {
-      firebase.initializeApp(firebaseConfig);
-      window._auth = firebase.auth();
-      window._db   = firebase.firestore();
+  // helper: show/hide panels
+  function showApp(isAuthedAndVerified) {
+    if (isAuthedAndVerified) {
+      authPanel.style.display = 'none';
+      debtForm.style.display  = 'block';
+      logoutBtn.style.display = 'inline-block';
     } else {
-      window._auth = null;
-      window._db   = null;
-      console.warn("Firebase config not provided. Running in local-only mode.");
+      authPanel.style.display = 'block';
+      debtForm.style.display  = 'none';
+      logoutBtn.style.display = 'none';
     }
-  </script>
+  }
+  // start hidden until we know
+  showApp(false);
 
-  <script src="script.js"></script>
-</body>
-</html>
+  // 3) SIGN UP → send verification email
+  signupBtn.addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    const pass  = passEl.value;
+    if (!email || !pass) {
+      alert('Enter email and password.');
+      return;
+    }
+    signupBtn.disabled = true;
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await sendEmailVerification(cred.user);
+      alert('Verification email sent. Check your inbox and verify before logging in.');
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Sign up failed.');
+    } finally {
+      signupBtn.disabled = false;
+    }
+  });
+
+  // 4) LOG IN → block if not verified
+  loginBtn.addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    const pass  = passEl.value;
+    if (!email || !pass) {
+      alert('Enter email and password.');
+      return;
+    }
+    loginBtn.disabled = true;
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, pass);
+      if (!cred.user.emailVerified) {
+        await signOut(auth);
+        alert('Please verify your email first (check inbox/spam).');
+        return;
+      }
+      // onAuthStateChanged will flip the UI
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Login failed.');
+    } finally {
+      loginBtn.disabled = false;
+    }
+  });
+
+  // 5) LOG OUT
+  logoutBtn.addEventListener('click', async () => {
+    try { await signOut(auth); } catch (e) { console.error(e); }
+  });
+
+  // 6) AUTH STATE GUARD
+  onAuthStateChanged(auth, (user) => {
+    const ok = !!user && !!user.emailVerified;
+    showApp(ok);
+  });
+</script>
