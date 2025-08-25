@@ -1,269 +1,207 @@
-/* QuickWheel – pure front-end, per-user wheel */
+// ===== Firebase (optional; app works fully without logging in) =====
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, sendEmailVerification
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDocs, setDoc, deleteDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// --- DOM
+// Put your real values here if you want cloud sync; otherwise leave as-is and it will use localStorage only.
+const firebaseConfig = {
+  apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
+  authDomain: "REPLACE_ME.firebaseapp.com",
+  projectId: "REPLACE_ME",
+  appId: "REPLACE_ME"
+};
+const CONFIG_OK = firebaseConfig.projectId !== "REPLACE_ME";
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = CONFIG_OK ? getFirestore(app) : null;
+
+// ===== Utilities =====
 const $ = (s) => document.querySelector(s);
-const optionsEl = $('#options');
-const noRepeatsEl = $('#noRepeats');
-const equalizeColorsEl = $('#equalizeColors');
-const canvas = $('#wheel');
-const ctx = canvas.getContext('2d', { alpha: false });
-const spinBtn = $('#spin');
-const resultEl = $('#result');
+const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
+const pct = (n) => isFinite(n) ? `${n.toFixed(1)}%` : '0%';
+const todayISO = () => new Date().toISOString().slice(0,10);
+const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-// --- State
-let items = [];           // [{label: string}]
-let spinning = false;
-let angle = 0;            // current rotation in radians
-let targetAngle = 0;      // destination angle for current spin
-let startTs = 0;          // spin start timestamp
-let duration = 0;         // spin duration ms
+// ===== State =====
+let user = null;
+let debts = [];
+const localKey = () => `debts.v1.${user ? user.uid : 'guest'}`;
 
-// --- Persistence keys
-const LS_KEY = 'quickwheel.options';
-const URL_KEY = 'w'; // hash param
-
-// --- Helpers
-const TAU = Math.PI * 2;
-const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-function linesToItems(txt) {
-  return txt
-    .split(/\r?\n/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => ({ label: s }));
+// ===== Local storage =====
+function loadFromLocal(){
+  try { debts = JSON.parse(localStorage.getItem(localKey()) || '[]'); }
+  catch { debts = []; }
 }
-function itemsToText(list) {
-  return list.map(x => x.label).join('\n');
-}
-function randomChoice(n) {
-  return Math.floor(Math.random() * n);
-}
-function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
-function rand(min, max){ return Math.random() * (max - min) + min; }
-function hashEncode(str){ return btoa(unescape(encodeURIComponent(str))); }
-function hashDecode(str){ try { return decodeURIComponent(escape(atob(str))); } catch { return ''; } }
-
-// --- Colors
-function segmentColor(i, n) {
-  if (!equalizeColorsEl.checked) {
-    // pleasant random palette by index (golden ratio)
-    const hue = (i * 137.508) % 360;
-    return `hsl(${hue}deg 80% 45%)`;
-  }
-  // equalized across the circle
-  const hue = Math.round((i / Math.max(1, n)) * 360);
-  return `hsl(${hue}deg 75% 47%)`;
+function saveToLocal(){
+  localStorage.setItem(localKey(), JSON.stringify(debts));
 }
 
-// --- Drawing
-function drawWheel() {
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#0b0f14';
-  ctx.fillRect(0,0,W,H);
-
-  const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 12;
-
-  const n = items.length || 1;
-  const slice = TAU / n;
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
-
-  for (let i=0;i<n;i++){
-    const a0 = i * slice;
-    const a1 = a0 + slice;
-
-    // slice
-    ctx.beginPath();
-    ctx.moveTo(0,0);
-    ctx.arc(0,0,r,a0,a1);
-    ctx.closePath();
-    ctx.fillStyle = items.length ? segmentColor(i, n) : '#283041';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#0b0f14';
-    ctx.stroke();
-
-    // label
-    const mid = a0 + slice/2;
-    ctx.save();
-    ctx.rotate(mid);
-    ctx.translate(r*0.68, 0);
-    ctx.rotate(Math.PI/2);
-    ctx.fillStyle = '#fff';
-    ctx.font = '600 16px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const label = items.length ? truncate(items[i].label, 26) : 'Add options';
-    wrapText(ctx, label, 0, 0, r*0.46, 18);
-    ctx.restore();
-  }
-  ctx.restore();
-
-  // pointer
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r - 6);
-  ctx.lineTo(cx - 14, cy - r - 38);
-  ctx.lineTo(cx + 14, cy - r - 38);
-  ctx.closePath();
-  ctx.fillStyle = '#22d3ee';
-  ctx.fill();
-  ctx.strokeStyle = '#0b0f14';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+// ===== Firestore =====
+const path = (uid) => `users/${uid}/debts`;
+async function loadFromCloud(uid){
+  const snap = await getDocs(collection(db, path(uid)));
+  debts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+async function saveItemToCloud(uid, item){
+  const ref = item.id ? doc(db, `${path(uid)}/${item.id}`) : doc(collection(db, path(uid)));
+  if (!item.id) item.id = ref.id;
+  await setDoc(ref, item);
+}
+async function deleteItemFromCloud(uid, id){
+  await deleteDoc(doc(db, `${path(uid)}/${id}`));
 }
 
-function truncate(s, max){
-  return s.length > max ? s.slice(0, max-1) + '…' : s;
-}
+// ===== Form =====
+function bindForm(){
+  const form = $('#debt-form');
+  const due  = $('#due-date');
+  if (!form) return;
 
-// simple text wrapping for labels
-function wrapText(ctx, text, x, y, maxWidth, lineHeight){
-  const words = text.split(/\s+/);
-  let line = '';
-  let yy = y;
-  for (let w of words){
-    const test = line ? (line + ' ' + w) : w;
-    const width = ctx.measureText(test).width;
-    if (width > maxWidth && line){
-      ctx.fillText(line, x, yy);
-      line = w;
-      yy += lineHeight;
-    } else {
-      line = test;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const item = {
+      id: null,
+      name: $('#debt-name')?.value.trim() || '',
+      original:  parseFloat($('#original-amount')?.value || '0') || 0,
+      balance:   parseFloat($('#balance')?.value || '0') || 0,
+      paid:      parseFloat($('#amount-paid')?.value || '0') || 0,
+      apr:       parseFloat($('#apr')?.value || '0') || 0,
+      minPayment:parseFloat($('#min-payment')?.value || '0') || 0,
+      due: due?.value || todayISO(),
+      createdAt: Date.now()
+    };
+
+    // infer balance if omitted
+    if (!($('#balance')?.value) && item.original >= 0 && item.paid >= 0) {
+      const inferred = Math.max(item.original - item.paid, 0);
+      item.balance = isFinite(inferred) ? inferred : 0;
     }
-  }
-  ctx.fillText(line, x, yy);
-}
 
-// --- Logic
-function setItemsFromTextarea() {
-  items = linesToItems(optionsEl.value);
-  drawWheel();
-}
+    debts.push(item);
+    try { if (user && db) await saveItemToCloud(user.uid, item); else saveToLocal(); }
+    catch { saveToLocal(); }
 
-function spin() {
-  if (spinning || items.length < 2) return;
-  spinning = true;
-  resultEl.textContent = '';
-
-  // pick a target segment
-  const idx = randomChoice(items.length);
-
-  // each slice angle:
-  const slice = TAU / items.length;
-
-  // We want the pointer (top) to land at the center of idx slice.
-  // Current pointer relative to wheel is angle 0 (top). So make targetAngle
-  // such that angle % TAU === (TAU - mid) to align.
-  const mid = idx * slice + slice / 2;
-  const spins = 4 + Math.floor(Math.random() * 3); // 4-6 full spins
-  const final = spins * TAU + (TAU - mid);
-
-  startTs = performance.now();
-  duration = rand(3200, 4700);
-  const startAngle = angle;
-  targetAngle = startAngle + final;
-
-  requestAnimationFrame(function animate(ts){
-    const t = clamp((ts - startTs) / duration, 0, 1);
-    const eased = easeOutCubic(t);
-    angle = startAngle + (final * eased);
-    drawWheel();
-
-    if (t < 1) {
-      requestAnimationFrame(animate);
-    } else {
-      angle = targetAngle % TAU;
-      spinning = false;
-
-      const winner = items[idx].label;
-      resultEl.textContent = `Winner: ${winner}`;
-      if (noRepeatsEl.checked) {
-        items.splice(idx, 1);
-        optionsEl.value = itemsToText(items);
-        drawWheel();
-        saveLocal(false); // silent
-      }
-    }
+    e.target.reset?.();
+    if (due) due.value = todayISO();
+    render();
   });
 }
 
-// --- Local save/load
-function saveLocal(showToast = true) {
-  localStorage.setItem(LS_KEY, optionsEl.value);
-  if (showToast) toast('Saved locally.');
+// ===== Render =====
+function render(){
+  const tbody = document.querySelector('#debt-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  let totOriginal=0, totBalance=0, totPaid=0, totMin=0;
+
+  debts.slice().sort((a,b)=>(a.due||'').localeCompare(b.due||'')).forEach((d, idx) => {
+    totOriginal += d.original||0;
+    totBalance  += d.balance||0;
+    totPaid     += d.paid||0;
+    totMin      += d.minPayment||0;
+
+    const p = d.original>0 ? (100*(d.paid||0)/d.original) : 0;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(d.name||'')}</td>
+      <td>${fmt(d.original)}</td>
+      <td>${fmt(d.balance)}</td>
+      <td>${fmt(d.paid)}</td>
+      <td>${(d.apr||0).toFixed(2)}</td>
+      <td>${fmt(d.minPayment)}</td>
+      <td>${d.due||''}</td>
+      <td>${pct(p)}</td>
+      <td><button class="del" data-idx="${idx}">Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  $('#tot-original').textContent = fmt(totOriginal);
+  $('#tot-balance').textContent  = fmt(totBalance);
+  $('#tot-paid').textContent     = fmt(totPaid);
+  $('#tot-minpay').textContent   = fmt(totMin);
+
+  tbody.querySelectorAll('button.del').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const i = Number(e.currentTarget.getAttribute('data-idx'));
+      const item = debts[i];
+      debts.splice(i,1);
+      try { if (user && item?.id && db) await deleteItemFromCloud(user.uid, item.id); else saveToLocal(); }
+      catch { saveToLocal(); }
+      render();
+    });
+  });
 }
-function loadLocal() {
-  const v = localStorage.getItem(LS_KEY);
-  if (v != null) {
-    optionsEl.value = v;
-    setItemsFromTextarea();
-    toast('Loaded.');
-  } else {
-    toast('Nothing saved yet.');
+
+// ===== Auth (optional) =====
+function bindAuth(){
+  const signup = $('#signup'), login = $('#login'), logout = $('#logout');
+  const email  = $('#email'),  pass  = $('#password');
+
+  if (signup){
+    signup.addEventListener('click', async () => {
+      if (!email?.value || !pass?.value) return alert('Enter email and password.');
+      signup.disabled = true;
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email.value.trim(), pass.value);
+        await sendEmailVerification(cred.user);
+        alert('Verification email sent (login still allowed without verification).');
+      } catch (e) { alert(e.message || 'Sign up failed.'); }
+      finally { signup.disabled = false; }
+    });
+  }
+
+  if (login){
+    login.addEventListener('click', async () => {
+      if (!email?.value || !pass?.value) return alert('Enter email and password.');
+      login.disabled = true;
+      try { await signInWithEmailAndPassword(auth, email.value.trim(), pass.value); }
+      catch (e) { alert(e.message || 'Login failed.'); }
+      finally { login.disabled = false; }
+    });
+  }
+
+  if (logout){
+    logout.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
   }
 }
 
-// --- Share via URL (base64 in hash)
-function shareUrl() {
-  const enc = hashEncode(optionsEl.value);
-  const url = `${location.origin}${location.pathname}#${URL_KEY}=${enc}`;
-  navigator.clipboard?.writeText(url).catch(()=>{});
-  toast('Share link copied.');
+// ===== Show/Hide =====
+function showApp(isLoggedIn){
+  // Per your request: the app works even when logged out.
+  // Logged-in users sync to Firestore; guests use localStorage.
+  $('#logout').style.display = isLoggedIn ? 'inline-block' : 'none';
 }
 
-function loadFromHash() {
-  const m = location.hash.match(/#w=([^&]+)/);
-  if (m) {
-    const txt = hashDecode(m[1]);
-    if (txt) optionsEl.value = txt;
-  }
-}
-
-// --- UI events
-$('#addLine').onclick   = () => { optionsEl.value += (optionsEl.value.endsWith('\n') || optionsEl.value === '' ? '' : '\n'); optionsEl.value += ''; optionsEl.focus(); };
-$('#shuffle').onclick   = () => { items = linesToItems(optionsEl.value); for (let i=items.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [items[i],items[j]]=[items[j],items[i]]; } optionsEl.value = itemsToText(items); drawWheel(); saveLocal(false); };
-$('#clear').onclick     = () => { optionsEl.value=''; items=[]; drawWheel(); saveLocal(false); };
-$('#saveLocal').onclick = () => saveLocal(true);
-$('#loadLocal').onclick = () => loadLocal();
-$('#shareUrl').onclick  = () => shareUrl();
-optionsEl.addEventListener('input', setItemsFromTextarea);
-spinBtn.addEventListener('click', spin);
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') { e.preventDefault(); spin(); }
+// ===== Startup =====
+document.addEventListener('DOMContentLoaded', () => {
+  const due = $('#due-date');
+  if (due && !due.value) due.value = todayISO();
+  bindAuth();
+  bindForm();
+  loadFromLocal(); // immediate UX
+  render();
 });
 
-// --- toast
-let toastTimer = null;
-function toast(msg){
-  let el = document.getElementById('toast');
-  if (!el){
-    el = document.createElement('div');
-    el.id = 'toast';
-    Object.assign(el.style, {
-      position:'fixed', left:'50%', bottom:'28px', transform:'translateX(-50%)',
-      background:'#111726', color:'#e9edf1', border:'1px solid #1e2632',
-      padding:'10px 14px', borderRadius:'12px', boxShadow:'0 10px 24px rgba(0,0,0,.35)', zIndex:9999,
-      font:'13px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial'
-    });
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  el.style.opacity = '1';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>{ el.style.opacity='0'; }, 1600);
-}
+onAuthStateChanged(auth, async (u) => {
+  // Allow unverified accounts; switch to (u && u.emailVerified) to gate.
+  user = u || null;
 
-// --- boot
-function boot(){
-  loadFromHash();
-  if (!optionsEl.value.trim()){
-    // default sample
-    optionsEl.value = ['Pizza','Sushi','Burgers','Tacos'].join('\n');
+  try {
+    if (user && db) await loadFromCloud(user.uid);
+    else loadFromLocal();
+  } catch {
+    loadFromLocal();
   }
-  setItemsFromTextarea();
-}
-boot();
+
+  showApp(!!user);
+  render();
+});
