@@ -28,7 +28,8 @@
     <input type="number" id="amount-paid"     placeholder="Amount Paid" step="0.01" />
     <input type="number" id="apr"             placeholder="APR %" step="0.01" />
     <input type="number" id="min-payment"     placeholder="Min Payment" step="0.01" />
-    <input type="date"   id="due-date" />
+    <!-- NOTE: type=text so we can show placeholder "Due Date" -->
+    <input type="text"   id="due-date"        placeholder="Due Date" inputmode="none" />
     <button type="submit" class="primary">Add</button>
   </form>
 
