@@ -3,55 +3,63 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QuickWheel</title>
+  <title>Debt Tracker</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <header class="wrap">
-    <h1>QuickWheel</h1>
-    <p class="sub">Type options, click Spin. No logins. Everything stays on your device.</p>
-  </header>
+  <h1>Debt Tracker</h1>
 
-  <main class="wrap grid">
-    <section class="panel">
-      <label for="options" class="lbl">Options (one per line)</label>
-      <textarea id="options" placeholder="Pizza
-Sushi
-Burgers
-Tacos"></textarea>
+  <!-- AUTH (optional; hidden when logged out UI is allowed) -->
+  <div id="auth" class="auth">
+    <input id="email" type="email" placeholder="Email" autocomplete="email" />
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+    <button id="signup" type="button">Sign Up</button>
+    <button id="login" type="button">Log In</button>
+    <button id="logout" type="button" style="display:none">Log Out</button>
+    <span class="hint">Login is optional. Logged out = data saved to your device.</span>
+  </div>
 
-      <div class="row">
-        <button id="addLine" type="button">+ Add Line</button>
-        <button id="shuffle" type="button">Shuffle</button>
-        <button id="clear" type="button">Clear</button>
-      </div>
+  <!-- DEBT FORM -->
+  <form id="debt-form" autocomplete="off">
+    <input type="text"   id="debt-name"       placeholder="Debt Name" required />
+    <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" />
+    <input type="number" id="balance"         placeholder="Current Balance" step="0.01" />
+    <input type="number" id="amount-paid"     placeholder="Amount Paid" step="0.01" />
+    <input type="number" id="apr"             placeholder="APR %" step="0.01" />
+    <input type="number" id="min-payment"     placeholder="Min Payment" step="0.01" />
+    <input type="date"   id="due-date" />
+    <button type="submit" class="primary">Add</button>
+  </form>
 
-      <div class="row">
-        <label class="inline"><input type="checkbox" id="noRepeats" /> Remove winner after spin</label>
-        <label class="inline"><input type="checkbox" id="equalizeColors" checked /> Equalize colors</label>
-      </div>
-
-      <div class="row">
-        <button id="saveLocal" type="button">Save Locally</button>
-        <button id="loadLocal" type="button">Load Saved</button>
-        <button id="shareUrl" type="button">Share Link</button>
-      </div>
-    </section>
-
-    <section class="panel wheel-panel">
-      <canvas id="wheel" width="520" height="520" aria-label="Wheel"></canvas>
-
-      <div class="controls">
-        <button id="spin" class="primary" type="button">SPIN</button>
-        <div id="result" class="result" role="status" aria-live="polite"></div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="wrap tiny">
-    <span>Tip: press <kbd>Enter</kbd> in the options box to redraw; press <kbd>Space</kbd> to spin.</span>
-  </footer>
+  <!-- TABLE -->
+  <table id="debt-table">
+    <thead>
+      <tr>
+        <th>Debt</th>
+        <th>Original</th>
+        <th>Balance</th>
+        <th>Paid</th>
+        <th>APR %</th>
+        <th>Min Pay</th>
+        <th>Due</th>
+        <th>% Paid</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+    <tfoot>
+      <tr>
+        <th>Totals</th>
+        <th id="tot-original">$0.00</th>
+        <th id="tot-balance">$0.00</th>
+        <th id="tot-paid">$0.00</th>
+        <th></th>
+        <th id="tot-minpay">$0.00</th>
+        <th colspan="3"></th>
+      </tr>
+    </tfoot>
+  </table>
 
   <script type="module" src="./app.js"></script>
 </body>
