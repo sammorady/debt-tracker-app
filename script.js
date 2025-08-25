@@ -1,117 +1,153 @@
-// ===== Firebase (optional; app works fully without logging in) =====
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged,
-  createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, sendEmailVerification
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  getFirestore, collection, doc, getDocs, setDoc, deleteDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+/************ SAFE FIREBASE WRAPPER (optional) ************/
+let auth = null, db = null, fbReady = false;
+(async () => {
+  try {
+    const [{ initializeApp }] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+    ]);
+    const [
+      { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendEmailVerification },
+      { getFirestore, collection, doc, getDocs, setDoc, deleteDoc }
+    ] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
+    ]);
 
-// Put your real values here if you want cloud sync; otherwise leave as-is and it will use localStorage only.
-const firebaseConfig = {
-  apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
-  authDomain: "REPLACE_ME.firebaseapp.com",
-  projectId: "REPLACE_ME",
-  appId: "REPLACE_ME"
-};
-const CONFIG_OK = firebaseConfig.projectId !== "REPLACE_ME";
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = CONFIG_OK ? getFirestore(app) : null;
+    // Expose for later
+    window._fb = { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendEmailVerification,
+                   getFirestore, collection, doc, getDocs, setDoc, deleteDoc };
 
-// ===== Utilities =====
+    const firebaseConfig = {
+      apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
+      authDomain: "REPLACE_ME.firebaseapp.com",
+      projectId: "REPLACE_ME",
+      appId: "REPLACE_ME"
+    };
+    const CONFIG_OK = firebaseConfig.projectId !== "REPLACE_ME";
+
+    const app = initializeApp(firebaseConfig);
+    auth = window._fb.getAuth(app);
+    db   = CONFIG_OK ? window._fb.getFirestore(app) : null;
+    fbReady = true;
+  } catch (e) {
+    // Firebase not available or blocked — app still works offline
+    fbReady = false;
+  }
+})();
+
+/************ UTILITIES ************/
 const $ = (s) => document.querySelector(s);
 const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
 const pct = (n) => isFinite(n) ? `${n.toFixed(1)}%` : '0%';
 const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-// Format YYYY-MM-DD -> MM/DD/YYYY
-function formatDateMMDDYYYY(iso) {
+const formatDateMMDDYYYY = (iso) => {
   if (!iso) return '';
-  // Accept both pure ISO and anything else gracefully
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  const [, y, mo, d] = m;
-  return `${mo}/${d}/${y}`;
-}
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : iso;
+};
 
-// ===== State =====
+/************ STATE & STORAGE ************/
 let user = null;
 let debts = [];
 const localKey = () => `debts.v1.${user ? user.uid : 'guest'}`;
 
-// ===== Local storage =====
 function loadFromLocal(){
   try { debts = JSON.parse(localStorage.getItem(localKey()) || '[]'); }
   catch { debts = []; }
 }
 function saveToLocal(){
-  localStorage.setItem(localKey(), JSON.stringify(debts));
+  try { localStorage.setItem(localKey(), JSON.stringify(debts)); } catch {}
 }
 
-// ===== Firestore =====
+/************ CLOUD (guarded) ************/
 const path = (uid) => `users/${uid}/debts`;
 async function loadFromCloud(uid){
-  const snap = await getDocs(collection(db, path(uid)));
+  if (!db) return;
+  const snap = await window._fb.getDocs(window._fb.collection(db, path(uid)));
   debts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 async function saveItemToCloud(uid, item){
-  const ref = item.id ? doc(db, `${path(uid)}/${item.id}`) : doc(collection(db, path(uid)));
+  if (!db) return;
+  const ref = item.id
+    ? window._fb.doc(db, `${path(uid)}/${item.id}`)
+    : window._fb.doc(window._fb.collection(db, path(uid)));
   if (!item.id) item.id = ref.id;
-  await setDoc(ref, item);
+  await window._fb.setDoc(ref, item);
 }
 async function deleteItemFromCloud(uid, id){
-  await deleteDoc(doc(db, `${path(uid)}/${id}`));
+  if (!db) return;
+  await window._fb.deleteDoc(window._fb.doc(db, `${path(uid)}/${id}`));
 }
 
-// ===== Form =====
+/************ ERROR PANEL ************/
+function showError(msg){
+  let bar = $('#error-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'error-bar';
+    bar.style.cssText = 'margin:8px 0;padding:8px;border:1px solid #e33;background:#fee;color:#900;font:12px/1.4 system-ui';
+    $('#auth')?.insertAdjacentElement('afterend', bar);
+  }
+  bar.textContent = msg;
+}
+
+/************ FORM ************/
 function bindForm(){
   const form = $('#debt-form');
   const due  = $('#due-date');
   if (!form) return;
 
-  // Placeholder "Due Date" with native picker on focus
+  // "Due Date" placeholder -> switch to native date on focus
   if (due){
+    due.type = 'text';
+    due.placeholder = 'Due Date';
     due.addEventListener('focus', () => { if (due.type !== 'date') due.type = 'date'; });
-    due.addEventListener('blur', () => { if (!due.value) { due.type = 'text'; due.placeholder = 'Due Date'; } });
+    due.addEventListener('blur',  () => { if (!due.value) { due.type = 'text'; due.placeholder = 'Due Date'; } });
   }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const dueEl = $('#due-date');
-    const item = {
-      id: null,
-      name: $('#debt-name')?.value.trim() || '',
-      original:  parseFloat($('#original-amount')?.value || '0') || 0,
-      balance:   parseFloat($('#balance')?.value || '0') || 0,
-      paid:      parseFloat($('#amount-paid')?.value || '0') || 0,
-      apr:       parseFloat($('#apr')?.value || '0') || 0,
-      minPayment:parseFloat($('#min-payment')?.value || '0') || 0,
-      // Store ISO (YYYY-MM-DD) or empty string if none picked
-      due: (dueEl?.value || '').trim(),
-      createdAt: Date.now()
-    };
+    try {
+      const item = {
+        id: null,
+        name: $('#debt-name')?.value.trim() || '',
+        original:   parseFloat($('#original-amount')?.value || '0') || 0,
+        balance:    parseFloat($('#balance')?.value || '0') || 0,
+        paid:       parseFloat($('#amount-paid')?.value || '0') || 0,
+        apr:        parseFloat($('#apr')?.value || '0') || 0,
+        minPayment: parseFloat($('#min-payment')?.value || '0') || 0,
+        due:        ($('#due-date')?.value || '').trim(),
+        createdAt:  Date.now()
+      };
 
-    // infer balance if omitted
-    if (!($('#balance')?.value) && item.original >= 0 && item.paid >= 0) {
-      const inferred = Math.max(item.original - item.paid, 0);
-      item.balance = isFinite(inferred) ? inferred : 0;
+      // Infer balance if omitted
+      if (!($('#balance')?.value) && item.original >= 0 && item.paid >= 0) {
+        const inferred = Math.max(item.original - item.paid, 0);
+        item.balance = isFinite(inferred) ? inferred : 0;
+      }
+
+      // Push to memory first so UI updates even if saving fails
+      debts.push(item);
+      saveToLocal();
+
+      // If logged in with Firestore configured, try cloud save (best-effort)
+      if (user && db) {
+        try { await saveItemToCloud(user.uid, item); } catch (e) { showError(`Cloud save failed (using local): ${e.message||e}`); }
+      }
+
+      // Reset form & restore placeholder
+      form.reset();
+      if (due) { due.type = 'text'; due.placeholder = 'Due Date'; }
+
+      render();
+    } catch (err) {
+      showError(`Add failed: ${err?.message || err}`);
+      console.error(err);
     }
-
-    debts.push(item);
-    try { if (user && db) await saveItemToCloud(user.uid, item); else saveToLocal(); }
-    catch { saveToLocal(); }
-
-    e.target.reset?.();
-    // restore placeholder state for due input
-    if (due) { due.type = 'text'; due.placeholder = 'Due Date'; }
-    render();
   });
 }
 
-// ===== Render =====
+/************ RENDER ************/
 function render(){
   const tbody = document.querySelector('#debt-table tbody');
   if (!tbody) return;
@@ -121,7 +157,7 @@ function render(){
 
   debts
     .slice()
-    .sort((a,b)=> (a.due||'').localeCompare(b.due||'')) // ISO sorts correctly; empty strings go first
+    .sort((a,b)=> (a.due||'').localeCompare(b.due||''))
     .forEach((d, idx) => {
       totOriginal += d.original||0;
       totBalance  += d.balance||0;
@@ -150,76 +186,82 @@ function render(){
   $('#tot-paid').textContent     = fmt(totPaid);
   $('#tot-minpay').textContent   = fmt(totMin);
 
+  // Delete handlers
   tbody.querySelectorAll('button.del').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const i = Number(e.currentTarget.getAttribute('data-idx'));
       const item = debts[i];
       debts.splice(i,1);
-      try { if (user && item?.id && db) await deleteItemFromCloud(user.uid, item.id); else saveToLocal(); }
-      catch { saveToLocal(); }
+      saveToLocal();
+      if (user && db && item?.id) {
+        try { await deleteItemFromCloud(user.uid, item.id); } catch (e2) { showError(`Cloud delete failed: ${e2.message||e2}`); }
+      }
       render();
     });
   });
 }
 
-// ===== Auth (optional) =====
+/************ AUTH (optional) ************/
 function bindAuth(){
   const signup = $('#signup'), login = $('#login'), logout = $('#logout');
   const email  = $('#email'),  pass  = $('#password');
 
-  if (signup){
-    signup.addEventListener('click', async () => {
-      if (!email?.value || !pass?.value) return alert('Enter email and password.');
-      signup.disabled = true;
-      try {
-        const cred = await createUserWithEmailAndPassword(auth, email.value.trim(), pass.value);
-        await sendEmailVerification(cred.user);
-        alert('Verification email sent (login still allowed without verification).');
-      } catch (e) { alert(e.message || 'Sign up failed.'); }
-      finally { signup.disabled = false; }
-    });
+  if (!signup || !login || !logout) return;
+
+  // If Firebase failed to init, keep buttons but make them no-ops with a message
+  if (!fbReady) {
+    [signup, login, logout].forEach(b => b?.addEventListener('click', () => showError('Auth disabled (Firebase not loaded). App still works locally.')));
+    return;
   }
 
-  if (login){
-    login.addEventListener('click', async () => {
-      if (!email?.value || !pass?.value) return alert('Enter email and password.');
-      login.disabled = true;
-      try { await signInWithEmailAndPassword(auth, email.value.trim(), pass.value); }
-      catch (e) { alert(e.message || 'Login failed.'); }
-      finally { login.disabled = false; }
-    });
-  }
+  signup.addEventListener('click', async () => {
+    if (!email?.value || !pass?.value) return alert('Enter email and password.');
+    try {
+      const cred = await window._fb.createUserWithEmailAndPassword(auth, email.value.trim(), pass.value);
+      await window._fb.sendEmailVerification(cred.user);
+      alert('Verification email sent (login allowed without verification).');
+    } catch (e) { alert(e.message || 'Sign up failed.'); }
+  });
 
-  if (logout){
-    logout.addEventListener('click', async () => { try { await signOut(auth); } catch {} });
-  }
+  login.addEventListener('click', async () => {
+    if (!email?.value || !pass?.value) return alert('Enter email and password.');
+    try { await window._fb.signInWithEmailAndPassword(auth, email.value.trim(), pass.value); }
+    catch (e) { alert(e.message || 'Login failed.'); }
+  });
+
+  logout.addEventListener('click', async () => { try { await window._fb.signOut(auth); } catch {} });
 }
 
-// ===== Show/Hide =====
 function showApp(isLoggedIn){
-  // App works when logged out. Logged-in users sync to Firestore; guests use localStorage.
-  $('#logout').style.display = isLoggedIn ? 'inline-block' : 'none';
+  const lo = $('#logout');
+  if (lo) lo.style.display = isLoggedIn ? 'inline-block' : 'none';
 }
 
-// ===== Startup =====
+/************ STARTUP ************/
 document.addEventListener('DOMContentLoaded', () => {
-  bindAuth();
-  bindForm();
-  loadFromLocal(); // immediate UX
-  render();
-});
-
-onAuthStateChanged(auth, async (u) => {
-  // Allow unverified accounts; switch to (u && u.emailVerified) to gate.
-  user = u || null;
-
   try {
-    if (user && db) await loadFromCloud(user.uid);
-    else loadFromLocal();
-  } catch {
+    bindAuth();
+    bindForm();
     loadFromLocal();
+    render();
+  } catch (e) {
+    showError(`Startup error: ${e.message||e}`);
+    console.error(e);
   }
-
-  showApp(!!user);
-  render();
 });
+
+// If Firebase was loaded, wire auth state. If not, we stay in "guest".
+const waitForFb = setInterval(() => {
+  if (!fbReady) return; // either loading or not available; if it never loads, we remain guest with local storage
+  clearInterval(waitForFb);
+  if (!auth) return;
+  window._fb.onAuthStateChanged(auth, async (u) => {
+    user = u || null;
+    try {
+      if (user && db) await loadFromCloud(user.uid);
+      else loadFromLocal();
+    } catch { loadFromLocal(); }
+    showApp(!!user);
+    render();
+  });
+}, 100);
