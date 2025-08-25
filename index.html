@@ -3,303 +3,56 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Debt Tracker</title>
+  <title>QuickWheel</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./style.css" />
-  <link rel="icon" href="data:,"><!-- prevents favicon 404 -->
-  <style>
-    /* safe defaults if style.css is missing */
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
-    #debt-form { margin: 12px 0; display:none; }
-    #debt-form input, #debt-form button { padding: 8px; margin: 4px 6px 4px 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    thead th { background:#f7f7f7; }
-  </style>
 </head>
 <body>
-  <h1>Debt Tracker</h1>
+  <header class="wrap">
+    <h1>QuickWheel</h1>
+    <p class="sub">Type options, click Spin. No logins. Everything stays on your device.</p>
+  </header>
 
-  <!-- AUTH PANEL -->
-  <div id="auth">
-    <input id="email" type="email" placeholder="Email" autocomplete="email" />
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-    <button id="signup" type="button">Sign Up</button>
-    <button id="login" type="button">Log In</button>
-    <button id="logout" type="button" style="display:none">Log Out</button>
-  </div>
+  <main class="wrap grid">
+    <section class="panel">
+      <label for="options" class="lbl">Options (one per line)</label>
+      <textarea id="options" placeholder="Pizza
+Sushi
+Burgers
+Tacos"></textarea>
 
-  <!-- DEBT FORM -->
-  <form id="debt-form" autocomplete="off">
-    <input type="text"   id="debt-name"       placeholder="Debt Name" required />
-    <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" />
-    <input type="number" id="balance"         placeholder="Current Balance"  step="0.01" />
-    <input type="number" id="amount-paid"     placeholder="Amount Paid"      step="0.01" />
-    <input type="number" id="apr"             placeholder="APR %"            step="0.01" />
-    <input type="number" id="min-payment"     placeholder="Min Payment"      step="0.01" />
-    <input type="date"   id="due-date" />
-    <button type="submit">Add</button>
-  </form>
+      <div class="row">
+        <button id="addLine" type="button">+ Add Line</button>
+        <button id="shuffle" type="button">Shuffle</button>
+        <button id="clear" type="button">Clear</button>
+      </div>
 
-  <!-- TABLE -->
-  <table id="debt-table">
-    <thead>
-      <tr>
-        <th>Name</th><th>Original</th><th>Balance</th><th>Paid</th>
-        <th>APR</th><th>Min Pay</th><th>Due</th><th>% Paid</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-    <tfoot>
-      <tr>
-        <th>Totals</th>
-        <th id="tot-original">$0.00</th>
-        <th id="tot-balance">$0.00</th>
-        <th id="tot-paid">$0.00</th>
-        <th></th>
-        <th id="tot-minpay">$0.00</th>
-        <th colspan="3"></th>
-      </tr>
-    </tfoot>
-  </table>
+      <div class="row">
+        <label class="inline"><input type="checkbox" id="noRepeats" /> Remove winner after spin</label>
+        <label class="inline"><input type="checkbox" id="equalizeColors" checked /> Equalize colors</label>
+      </div>
 
-  <!-- Modular Firebase + App Logic -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getAuth, onAuthStateChanged,
-      createUserWithEmailAndPassword, signInWithEmailAndPassword,
-      signOut, sendEmailVerification
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import {
-      getFirestore, collection, doc,
-      getDocs, setDoc, deleteDoc
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+      <div class="row">
+        <button id="saveLocal" type="button">Save Locally</button>
+        <button id="loadLocal" type="button">Load Saved</button>
+        <button id="shareUrl" type="button">Share Link</button>
+      </div>
+    </section>
 
-    // === Fill these with your real values ===
-    const firebaseConfig = {
-      apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
-      authDomain: "REPLACE_ME.firebaseapp.com",
-      projectId: "REPLACE_ME",
-      appId: "REPLACE_ME"  // e.g., 1:1234567890:web:abcdef123456
-    };
+    <section class="panel wheel-panel">
+      <canvas id="wheel" width="520" height="520" aria-label="Wheel"></canvas>
 
-    const app  = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db   = getFirestore(app);
+      <div class="controls">
+        <button id="spin" class="primary" type="button">SPIN</button>
+        <div id="result" class="result" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
 
-    // ===== Utilities =====
-    const $ = (sel) => document.querySelector(sel);
-    const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
-    const pct = (n) => isFinite(n) ? \`\${n.toFixed(1)}%\` : '0%';
-    const todayISO = () => new Date().toISOString().slice(0,10);
-    const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  <footer class="wrap tiny">
+    <span>Tip: press <kbd>Enter</kbd> in the options box to redraw; press <kbd>Space</kbd> to spin.</span>
+  </footer>
 
-    // ===== State =====
-    let debts = [];
-    let user  = null;
-
-    // ===== UI show/hide =====
-    function showApp(authed){
-      const authPanel = $('#auth');
-      const debtForm  = $('#debt-form');
-      const logoutBtn = $('#logout');
-      if (!authPanel || !debtForm || !logoutBtn) return;
-      if (authed){
-        authPanel.style.display = 'none';
-        debtForm.style.display  = 'block';
-        logoutBtn.style.display = 'inline-block';
-      } else {
-        authPanel.style.display = 'block';
-        debtForm.style.display  = 'none';
-        logoutBtn.style.display = 'none';
-      }
-    }
-
-    // ===== Firestore I/O =====
-    async function loadDebtsFromCloud(uid) {
-      const snap = await getDocs(collection(db, \`users/\${uid}/debts\`));
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    }
-    async function saveDebtToCloud(uid, item) {
-      const ref = item.id
-        ? doc(db, \`users/\${uid}/debts/\${item.id}\`)
-        : doc(collection(db, \`users/\${uid}/debts\`));
-      if (!item.id) item.id = ref.id;
-      await setDoc(ref, item);
-      return item;
-    }
-    async function deleteDebtFromCloud(uid, id) {
-      await deleteDoc(doc(db, \`users/\${uid}/debts/\${id}\`));
-    }
-
-    // ===== LocalStorage (when logged out) =====
-    const LOCAL_KEY = 'debts.v1';
-    function loadFromLocal() {
-      try { debts = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); }
-      catch { debts = []; }
-    }
-    function saveToLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(debts)); }
-
-    // ===== Render =====
-    function render() {
-      const tbody = document.querySelector('#debt-table tbody');
-      if (!tbody) return;
-      tbody.innerHTML = '';
-
-      let totOriginal = 0, totBalance = 0, totPaid = 0, totMin = 0;
-
-      debts.slice().sort((a,b)=>(a.due||'').localeCompare(b.due||'')).forEach((d, idx) => {
-        totOriginal += d.original||0;
-        totBalance  += d.balance ||0;
-        totPaid     += d.paid    ||0;
-        totMin      += d.minPayment||0;
-
-        const percentPaid = d.original > 0 ? (100 * (d.paid || 0) / d.original) : 0;
-        const tr = document.createElement('tr');
-        tr.innerHTML = \`
-          <td>\${escapeHtml(d.name || '')}</td>
-          <td>\${fmt(d.original)}</td>
-          <td>\${fmt(d.balance)}</td>
-          <td>\${fmt(d.paid)}</td>
-          <td>\${(d.apr || 0).toFixed(2)}</td>
-          <td>\${fmt(d.minPayment)}</td>
-          <td>\${d.due || ''}</td>
-          <td>\${pct(percentPaid)}</td>
-          <td><button data-idx="\${idx}" class="del">Delete</button></td>
-        \`;
-        tbody.appendChild(tr);
-      });
-
-      $('#tot-original') && ($('#tot-original').textContent = fmt(totOriginal));
-      $('#tot-balance')  && ($('#tot-balance').textContent  = fmt(totBalance));
-      $('#tot-paid')     && ($('#tot-paid').textContent     = fmt(totPaid));
-      $('#tot-minpay')   && ($('#tot-minpay').textContent   = fmt(totMin));
-
-      tbody.querySelectorAll('button.del').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const i = Number(e.currentTarget.getAttribute('data-idx'));
-          const item = debts[i];
-          debts.splice(i, 1);
-          if (user && item?.id) await deleteDebtFromCloud(user.uid, item.id);
-          else saveToLocal();
-          render();
-        });
-      });
-    }
-
-    // ===== Form =====
-    function bindForm() {
-      const debtForm = $('#debt-form');
-      const dueInput = $('#due-date');
-      if (!debtForm) return;
-      debtForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const item = {
-          id: null,
-          name: $('#debt-name')?.value.trim() || '',
-          original: parseFloat($('#original-amount')?.value || '0') || 0,
-          balance:  parseFloat($('#balance')?.value || '0') || 0,
-          paid:     parseFloat($('#amount-paid')?.value || '0') || 0,
-          apr:      parseFloat($('#apr')?.value || '0') || 0,
-          minPayment: parseFloat($('#min-payment')?.value || '0') || 0,
-          due: $('#due-date')?.value || todayISO(),
-          createdAt: Date.now()
-        };
-
-        if (!($('#balance')?.value) && item.original >= 0 && item.paid >= 0) {
-          const inferred = Math.max(item.original - item.paid, 0);
-          item.balance = isFinite(inferred) ? inferred : 0;
-        }
-
-        debts.push(item);
-        if (user) await saveDebtToCloud(user.uid, item); else saveToLocal();
-
-        e.target.reset?.();
-        if (dueInput) dueInput.value = todayISO();
-        render();
-      });
-    }
-
-    // ===== Auth Buttons =====
-    function bindAuthButtons() {
-      const emailEl = $('#email');
-      const passEl  = $('#password');
-      const signupBtn = $('#signup');
-      const loginBtn  = $('#login');
-      const logoutBtn = $('#logout');
-
-      if (signupBtn) {
-        signupBtn.addEventListener('click', async () => {
-          const email = emailEl?.value.trim();
-          const pass  = passEl?.value;
-          if (!email || !pass) return alert('Enter email and password.');
-          signupBtn.disabled = true;
-          try {
-            const cred = await createUserWithEmailAndPassword(auth, email, pass);
-            await sendEmailVerification(cred.user);
-            alert('Verification email sent. Verify before logging in.');
-          } catch (e) {
-            console.error(e);
-            alert(e.message || 'Sign up failed.');
-          } finally {
-            signupBtn.disabled = false;
-          }
-        });
-      }
-
-      if (loginBtn) {
-        loginBtn.addEventListener('click', async () => {
-          const email = emailEl?.value.trim();
-          const pass  = passEl?.value;
-          if (!email || !pass) return alert('Enter email and password.');
-          loginBtn.disabled = true;
-          try {
-            const cred = await signInWithEmailAndPassword(auth, email, pass);
-            if (!cred.user.emailVerified) {
-              await signOut(auth);
-              alert('Please verify your email first (check inbox/spam).');
-              return;
-            }
-          } catch (e) {
-            console.error(e);
-            alert(e.message || 'Login failed.');
-          } finally {
-            loginBtn.disabled = false;
-          }
-        });
-      }
-
-      if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
-          try { await signOut(auth); } catch (e) { console.error(e); }
-        });
-      }
-    }
-
-    // ===== Startup =====
-    document.addEventListener('DOMContentLoaded', () => {
-      const dueInput = $('#due-date');
-      if (dueInput && !dueInput.value) dueInput.value = todayISO();
-      bindAuthButtons();
-      bindForm();
-      // Optional: show local data while waiting for auth
-      try { loadFromLocal(); render(); } catch {}
-    });
-
-    onAuthStateChanged(auth, async (u) => {
-      // Require verified email; change to (u || null) if you want to allow unverified.
-      user = (u && u.emailVerified) ? u : null;
-      try {
-        if (user) debts = await loadDebtsFromCloud(user.uid);
-        else loadFromLocal();
-      } catch (e) {
-        console.warn('Load failed, using local.', e);
-        loadFromLocal();
-      }
-      showApp(!!user);
-      render();
-    });
-  </script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
