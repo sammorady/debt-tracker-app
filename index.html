@@ -1,60 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Debt Tracker</title>
-  <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <h1>Debt Tracker</h1>
 
-  <!-- AUTH (optional; hidden when logged out UI is allowed) -->
-  <div id="auth" class="auth">
-    <input id="email" type="email" placeholder="Email" autocomplete="email" />
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-    <button id="signup" type="button">Sign Up</button>
-    <button id="login" type="button">Log In</button>
-    <button id="logout" type="button" style="display:none">Log Out</button>
-    <span class="hint">Login is optional. Logged out = data saved to your device.</span>
-  </div>
-
-  <!-- DEBT FORM -->
-  <form id="debt-form" autocomplete="off">
-    <input type="text"   id="debt-name"       placeholder="Debt Name" required />
-    <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" />
-    <input type="number" id="balance"         placeholder="Current Balance" step="0.01" />
-    <input type="number" id="amount-paid"     placeholder="Amount Paid" step="0.01" />
-    <input type="number" id="apr"             placeholder="APR %" step="0.01" />
-    <input type="number" id="min-payment"     placeholder="Min Payment" step="0.01" />
-    <!-- NOTE: type=text so we can show placeholder "Due Date" -->
-    <input type="text"   id="due-date"        placeholder="Due Date" inputmode="none" />
-    <button type="submit" class="primary">Add</button>
+  <form id="debt-form">
+    <input type="text" id="debt-name" placeholder="Debt Name" required />
+    <input type="number" id="original-amount" placeholder="Original Amount" required />
+    <input type="number" id="balance" placeholder="Current Balance" required />
+    <input type="number" id="apr" placeholder="APR (%)" step="0.01" />
+    <input type="number" id="min-payment" placeholder="Min. Payment" step="0.01" />
+    <input type="date" id="due-date" />
+    <button type="submit">Add Debt</button>
   </form>
 
-  <!-- TABLE -->
   <table id="debt-table">
     <thead>
       <tr>
         <th>Debt</th>
         <th>Original</th>
         <th>Balance</th>
-        <th>Paid</th>
         <th>APR %</th>
-        <th>Min Pay</th>
+        <th>Min. Payment</th>
         <th>Due</th>
         <th>% Paid</th>
-        <th></th>
+        <th>Actions</th> <!-- NEW -->
       </tr>
     </thead>
     <tbody></tbody>
     <tfoot>
       <tr>
-        <th>Totals</th>
+        <th>Total</th>
         <th id="tot-original">$0.00</th>
         <th id="tot-balance">$0.00</th>
-        <th id="tot-paid">$0.00</th>
         <th></th>
         <th id="tot-minpay">$0.00</th>
         <th colspan="3"></th>
@@ -62,6 +45,6 @@
     </tfoot>
   </table>
 
-  <script type="module" src="./app.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
