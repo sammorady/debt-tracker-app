@@ -25,8 +25,17 @@ const db   = CONFIG_OK ? getFirestore(app) : null;
 const $ = (s) => document.querySelector(s);
 const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
 const pct = (n) => isFinite(n) ? `${n.toFixed(1)}%` : '0%';
-const todayISO = () => new Date().toISOString().slice(0,10);
 const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// Format YYYY-MM-DD -> MM/DD/YYYY
+function formatDateMMDDYYYY(iso) {
+  if (!iso) return '';
+  // Accept both pure ISO and anything else gracefully
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${mo}/${d}/${y}`;
+}
 
 // ===== State =====
 let user = null;
@@ -63,8 +72,15 @@ function bindForm(){
   const due  = $('#due-date');
   if (!form) return;
 
+  // Placeholder "Due Date" with native picker on focus
+  if (due){
+    due.addEventListener('focus', () => { if (due.type !== 'date') due.type = 'date'; });
+    due.addEventListener('blur', () => { if (!due.value) { due.type = 'text'; due.placeholder = 'Due Date'; } });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const dueEl = $('#due-date');
     const item = {
       id: null,
       name: $('#debt-name')?.value.trim() || '',
@@ -73,7 +89,8 @@ function bindForm(){
       paid:      parseFloat($('#amount-paid')?.value || '0') || 0,
       apr:       parseFloat($('#apr')?.value || '0') || 0,
       minPayment:parseFloat($('#min-payment')?.value || '0') || 0,
-      due: due?.value || todayISO(),
+      // Store ISO (YYYY-MM-DD) or empty string if none picked
+      due: (dueEl?.value || '').trim(),
       createdAt: Date.now()
     };
 
@@ -88,7 +105,8 @@ function bindForm(){
     catch { saveToLocal(); }
 
     e.target.reset?.();
-    if (due) due.value = todayISO();
+    // restore placeholder state for due input
+    if (due) { due.type = 'text'; due.placeholder = 'Due Date'; }
     render();
   });
 }
@@ -101,28 +119,31 @@ function render(){
 
   let totOriginal=0, totBalance=0, totPaid=0, totMin=0;
 
-  debts.slice().sort((a,b)=>(a.due||'').localeCompare(b.due||'')).forEach((d, idx) => {
-    totOriginal += d.original||0;
-    totBalance  += d.balance||0;
-    totPaid     += d.paid||0;
-    totMin      += d.minPayment||0;
+  debts
+    .slice()
+    .sort((a,b)=> (a.due||'').localeCompare(b.due||'')) // ISO sorts correctly; empty strings go first
+    .forEach((d, idx) => {
+      totOriginal += d.original||0;
+      totBalance  += d.balance||0;
+      totPaid     += d.paid||0;
+      totMin      += d.minPayment||0;
 
-    const p = d.original>0 ? (100*(d.paid||0)/d.original) : 0;
+      const p = d.original>0 ? (100*(d.paid||0)/d.original) : 0;
 
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(d.name||'')}</td>
-      <td>${fmt(d.original)}</td>
-      <td>${fmt(d.balance)}</td>
-      <td>${fmt(d.paid)}</td>
-      <td>${(d.apr||0).toFixed(2)}</td>
-      <td>${fmt(d.minPayment)}</td>
-      <td>${d.due||''}</td>
-      <td>${pct(p)}</td>
-      <td><button class="del" data-idx="${idx}">Delete</button></td>
-    `;
-    tbody.appendChild(tr);
-  });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(d.name||'')}</td>
+        <td>${fmt(d.original)}</td>
+        <td>${fmt(d.balance)}</td>
+        <td>${fmt(d.paid)}</td>
+        <td>${(d.apr||0).toFixed(2)}</td>
+        <td>${fmt(d.minPayment)}</td>
+        <td>${escapeHtml(formatDateMMDDYYYY(d.due||''))}</td>
+        <td>${pct(p)}</td>
+        <td><button class="del" data-idx="${idx}">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
 
   $('#tot-original').textContent = fmt(totOriginal);
   $('#tot-balance').textContent  = fmt(totBalance);
@@ -176,15 +197,12 @@ function bindAuth(){
 
 // ===== Show/Hide =====
 function showApp(isLoggedIn){
-  // Per your request: the app works even when logged out.
-  // Logged-in users sync to Firestore; guests use localStorage.
+  // App works when logged out. Logged-in users sync to Firestore; guests use localStorage.
   $('#logout').style.display = isLoggedIn ? 'inline-block' : 'none';
 }
 
 // ===== Startup =====
 document.addEventListener('DOMContentLoaded', () => {
-  const due = $('#due-date');
-  if (due && !due.value) due.value = todayISO();
   bindAuth();
   bindForm();
   loadFromLocal(); // immediate UX
