@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Debt Tracker</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="icon" href="data:,"><!-- prevents favicon 404 -->
+  <style>
+    /* safe defaults if style.css is missing */
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+    #debt-form { margin: 12px 0; display:none; }
+    #debt-form input, #debt-form button { padding: 8px; margin: 4px 6px 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    thead th { background:#f7f7f7; }
+  </style>
 </head>
 <body>
   <h1>Debt Tracker</h1>
@@ -20,13 +30,13 @@
 
   <!-- DEBT FORM -->
   <form id="debt-form" autocomplete="off">
-    <input type="text" id="debt-name" placeholder="Debt Name" required />
+    <input type="text"   id="debt-name"       placeholder="Debt Name" required />
     <input type="number" id="original-amount" placeholder="Original Amount" step="0.01" />
-    <input type="number" id="balance" placeholder="Current Balance" step="0.01" />
-    <input type="number" id="amount-paid" placeholder="Amount Paid" step="0.01" />
-    <input type="number" id="apr" placeholder="APR %" step="0.01" />
-    <input type="number" id="min-payment" placeholder="Min Payment" step="0.01" />
-    <input type="date" id="due-date" />
+    <input type="number" id="balance"         placeholder="Current Balance"  step="0.01" />
+    <input type="number" id="amount-paid"     placeholder="Amount Paid"      step="0.01" />
+    <input type="number" id="apr"             placeholder="APR %"            step="0.01" />
+    <input type="number" id="min-payment"     placeholder="Min Payment"      step="0.01" />
+    <input type="date"   id="due-date" />
     <button type="submit">Add</button>
   </form>
 
@@ -65,37 +75,22 @@
       getDocs, setDoc, deleteDoc
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // ===== Firebase config (fill the 3 placeholders) =====
+    // === Fill these with your real values ===
     const firebaseConfig = {
       apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
       authDomain: "REPLACE_ME.firebaseapp.com",
       projectId: "REPLACE_ME",
-      appId: "REPLACE_ME"           // looks like: 1:1234567890:web:abcdef123456
+      appId: "REPLACE_ME"  // e.g., 1:1234567890:web:abcdef123456
     };
 
     const app  = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db   = getFirestore(app);
 
-    // ===== DOM =====
+    // ===== Utilities =====
     const $ = (sel) => document.querySelector(sel);
-    const emailEl   = $('#email');
-    const passEl    = $('#password');
-    const signupBtn = $('#signup');
-    const loginBtn  = $('#login');
-    const logoutBtn = $('#logout');
-    const authPanel = $('#auth');
-    const debtForm  = $('#debt-form');
-    const tbody     = document.querySelector('#debt-table tbody');
-    const totOriginalEl = $('#tot-original');
-    const totBalanceEl  = $('#tot-balance');
-    const totPaidEl     = $('#tot-paid');
-    const totMinPayEl   = $('#tot-minpay');
-    const dueInput      = $('#due-date');
-
-    // ===== Utils =====
     const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
-    const pct = (n) => isFinite(n) ? `${n.toFixed(1)}%` : '0%';
+    const pct = (n) => isFinite(n) ? \`\${n.toFixed(1)}%\` : '0%';
     const todayISO = () => new Date().toISOString().slice(0,10);
     const escapeHtml = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -104,9 +99,12 @@
     let user  = null;
 
     // ===== UI show/hide =====
-    function showApp(authedAndVerified) {
+    function showApp(authed){
+      const authPanel = $('#auth');
+      const debtForm  = $('#debt-form');
+      const logoutBtn = $('#logout');
       if (!authPanel || !debtForm || !logoutBtn) return;
-      if (authedAndVerified) {
+      if (authed){
         authPanel.style.display = 'none';
         debtForm.style.display  = 'block';
         logoutBtn.style.display = 'inline-block';
@@ -119,19 +117,19 @@
 
     // ===== Firestore I/O =====
     async function loadDebtsFromCloud(uid) {
-      const snap = await getDocs(collection(db, `users/${uid}/debts`));
+      const snap = await getDocs(collection(db, \`users/\${uid}/debts\`));
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
     async function saveDebtToCloud(uid, item) {
       const ref = item.id
-        ? doc(db, `users/${uid}/debts/${item.id}`)
-        : doc(collection(db, `users/${uid}/debts`));
+        ? doc(db, \`users/\${uid}/debts/\${item.id}\`)
+        : doc(collection(db, \`users/\${uid}/debts\`));
       if (!item.id) item.id = ref.id;
       await setDoc(ref, item);
       return item;
     }
     async function deleteDebtFromCloud(uid, id) {
-      await deleteDoc(doc(db, `users/${uid}/debts/${id}`));
+      await deleteDoc(doc(db, \`users/\${uid}/debts/\${id}\`));
     }
 
     // ===== LocalStorage (when logged out) =====
@@ -140,57 +138,50 @@
       try { debts = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); }
       catch { debts = []; }
     }
-    function saveToLocal() {
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(debts));
-    }
+    function saveToLocal() { localStorage.setItem(LOCAL_KEY, JSON.stringify(debts)); }
 
     // ===== Render =====
     function render() {
+      const tbody = document.querySelector('#debt-table tbody');
       if (!tbody) return;
       tbody.innerHTML = '';
 
       let totOriginal = 0, totBalance = 0, totPaid = 0, totMin = 0;
 
-      debts
-        .slice()
-        .sort((a,b) => (a.due || '').localeCompare(b.due || ''))
-        .forEach((d, idx) => {
-          totOriginal += d.original   || 0;
-          totBalance  += d.balance    || 0;
-          totPaid     += d.paid       || 0;
-          totMin      += d.minPayment || 0;
+      debts.slice().sort((a,b)=>(a.due||'').localeCompare(b.due||'')).forEach((d, idx) => {
+        totOriginal += d.original||0;
+        totBalance  += d.balance ||0;
+        totPaid     += d.paid    ||0;
+        totMin      += d.minPayment||0;
 
-          const percentPaid = d.original > 0 ? (100 * (d.paid || 0) / d.original) : 0;
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${escapeHtml(d.name || '')}</td>
-            <td>${fmt(d.original)}</td>
-            <td>${fmt(d.balance)}</td>
-            <td>${fmt(d.paid)}</td>
-            <td>${(d.apr || 0).toFixed(2)}</td>
-            <td>${fmt(d.minPayment)}</td>
-            <td>${d.due || ''}</td>
-            <td>${pct(percentPaid)}</td>
-            <td><button data-idx="${idx}" class="del">Delete</button></td>
-          `;
-          tbody.appendChild(tr);
-        });
+        const percentPaid = d.original > 0 ? (100 * (d.paid || 0) / d.original) : 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = \`
+          <td>\${escapeHtml(d.name || '')}</td>
+          <td>\${fmt(d.original)}</td>
+          <td>\${fmt(d.balance)}</td>
+          <td>\${fmt(d.paid)}</td>
+          <td>\${(d.apr || 0).toFixed(2)}</td>
+          <td>\${fmt(d.minPayment)}</td>
+          <td>\${d.due || ''}</td>
+          <td>\${pct(percentPaid)}</td>
+          <td><button data-idx="\${idx}" class="del">Delete</button></td>
+        \`;
+        tbody.appendChild(tr);
+      });
 
-      if (totOriginalEl) totOriginalEl.textContent = fmt(totOriginal);
-      if (totBalanceEl)  totBalanceEl.textContent  = fmt(totBalance);
-      if (totPaidEl)     totPaidEl.textContent     = fmt(totPaid);
-      if (totMinPayEl)   totMinPayEl.textContent   = fmt(totMin);
+      $('#tot-original') && ($('#tot-original').textContent = fmt(totOriginal));
+      $('#tot-balance')  && ($('#tot-balance').textContent  = fmt(totBalance));
+      $('#tot-paid')     && ($('#tot-paid').textContent     = fmt(totPaid));
+      $('#tot-minpay')   && ($('#tot-minpay').textContent   = fmt(totMin));
 
       tbody.querySelectorAll('button.del').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const i = Number(e.currentTarget.getAttribute('data-idx'));
           const item = debts[i];
           debts.splice(i, 1);
-          if (user && item?.id) {
-            await deleteDebtFromCloud(user.uid, item.id);
-          } else {
-            saveToLocal();
-          }
+          if (user && item?.id) await deleteDebtFromCloud(user.uid, item.id);
+          else saveToLocal();
           render();
         });
       });
@@ -198,6 +189,8 @@
 
     // ===== Form =====
     function bindForm() {
+      const debtForm = $('#debt-form');
+      const dueInput = $('#due-date');
       if (!debtForm) return;
       debtForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -220,11 +213,7 @@
         }
 
         debts.push(item);
-        if (user) {
-          await saveDebtToCloud(user.uid, item);
-        } else {
-          saveToLocal();
-        }
+        if (user) await saveDebtToCloud(user.uid, item); else saveToLocal();
 
         e.target.reset?.();
         if (dueInput) dueInput.value = todayISO();
@@ -234,6 +223,12 @@
 
     // ===== Auth Buttons =====
     function bindAuthButtons() {
+      const emailEl = $('#email');
+      const passEl  = $('#password');
+      const signupBtn = $('#signup');
+      const loginBtn  = $('#login');
+      const logoutBtn = $('#logout');
+
       if (signupBtn) {
         signupBtn.addEventListener('click', async () => {
           const email = emailEl?.value.trim();
@@ -284,19 +279,20 @@
 
     // ===== Startup =====
     document.addEventListener('DOMContentLoaded', () => {
+      const dueInput = $('#due-date');
       if (dueInput && !dueInput.value) dueInput.value = todayISO();
       bindAuthButtons();
       bindForm();
+      // Optional: show local data while waiting for auth
+      try { loadFromLocal(); render(); } catch {}
     });
 
     onAuthStateChanged(auth, async (u) => {
+      // Require verified email; change to (u || null) if you want to allow unverified.
       user = (u && u.emailVerified) ? u : null;
       try {
-        if (user) {
-          debts = await loadDebtsFromCloud(user.uid);
-        } else {
-          loadFromLocal();
-        }
+        if (user) debts = await loadDebtsFromCloud(user.uid);
+        else loadFromLocal();
       } catch (e) {
         console.warn('Load failed, using local.', e);
         loadFromLocal();
