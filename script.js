@@ -10,56 +10,73 @@ import {
   getDocs, setDoc, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// === REPLACE with your real values (apiKey is already set) ===
+/* ===== Firebase config =====
+   Fill in the three placeholders below from Firebase Console:
+   Project settings → General → Your apps → Web SDK config                               */
 const firebaseConfig = {
   apiKey: "AIzaSyDiFlAL9xN1MiFlvNGQ425anWXg8Ed32cc",
   authDomain: "REPLACE_ME.firebaseapp.com",
   projectId: "REPLACE_ME",
-  appId: "REPLACE_ME"
+  appId: "REPLACE_ME" // e.g. 1:1234567890:web:abcdef123456
 };
+
+// Basic sanity check so we don’t try cloud when config is blank
+const CONFIG_OK = firebaseConfig.projectId !== "REPLACE_ME" &&
+                  firebaseConfig.appId      !== "REPLACE_ME" &&
+                  firebaseConfig.authDomain !== "REPLACE_ME.firebaseapp.com";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+const db   = CONFIG_OK ? getFirestore(app) : null;
 
-// ===== Utilities =====
-const $ = (sel) => document.querySelector(sel);
-const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{style:'currency',currency:'USD'}) : '$0.00';
+/* ===== Utilities ===== */
+const $   = (sel) => document.querySelector(sel);
+const fmt = (n) => isFinite(n) ? n.toLocaleString(undefined,{ style:'currency', currency:'USD' }) : '$0.00';
 const pct = (n) => isFinite(n) ? `${n.toFixed(1)}%` : '0%';
-const todayISO = () => new Date().toISOString().slice(0,10);
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const todayISO    = () => new Date().toISOString().slice(0,10);
+const escapeHtml  = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const notify      = (msg) => console.info(msg);
 
-// ===== State =====
-const LOCAL_KEY = 'debts.v1';
+/* ===== State ===== */
 let debts = [];
 let user  = null;
+// Key is per-user so your local data doesn’t collide between users
+const localKey = () => `debts.v1.${user ? user.uid : 'guest'}`;
 
-// ===== Local storage =====
+/* ===== Local storage ===== */
 function loadFromLocal(){
-  try { debts = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); }
+  try { debts = JSON.parse(localStorage.getItem(localKey()) || '[]'); }
   catch { debts = []; }
 }
-function saveToLocal(){ localStorage.setItem(LOCAL_KEY, JSON.stringify(debts)); }
+function saveToLocal(){ localStorage.setItem(localKey(), JSON.stringify(debts)); }
 
-// ===== Firestore =====
+/* ===== Firestore helpers ===== */
+function userDebtsPath(uid){ return `users/${uid}/debts`; }
+
 async function loadFromCloud(uid){
-  const snap = await getDocs(collection(db, `users/${uid}/debts`));
+  if (!db) throw new Error('Firestore not initialized (missing config).');
+  const snap = await getDocs(collection(db, userDebtsPath(uid)));
   debts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
+
 async function saveItemToCloud(uid, item){
+  if (!db) return; // fail soft: keep working locally
   const ref = item.id
-    ? doc(db, `users/${uid}/debts/${item.id}`)
-    : doc(collection(db, `users/${uid}/debts`));
+    ? doc(db, `${userDebtsPath(uid)}/${item.id}`)
+    : doc(collection(db, userDebtsPath(uid)));
   if (!item.id) item.id = ref.id;
   await setDoc(ref, item);
 }
+
 async function deleteItemFromCloud(uid, id){
-  await deleteDoc(doc(db, `users/${uid}/debts/${id}`));
+  if (!db) return;
+  await deleteDoc(doc(db, `${userDebtsPath(uid)}/${id}`));
 }
 
-// ===== Auth buttons =====
+/* ===== Auth buttons ===== */
 function bindAuthButtons(){
   const signup = $('#signup'), login = $('#login'), logout = $('#logout');
+
   if (signup){
     signup.addEventListener('click', async () => {
       const email = $('#email')?.value.trim();
@@ -75,6 +92,7 @@ function bindAuthButtons(){
       } finally { signup.disabled = false; }
     });
   }
+
   if (login){
     login.addEventListener('click', async () => {
       const email = $('#email')?.value.trim();
@@ -82,53 +100,64 @@ function bindAuthButtons(){
       if (!email || !pass) return alert('Enter email and password.');
       login.disabled = true;
       try {
-        const cred = await signInWithEmailAndPassword(auth, email, pass);
-        // If you want to require verification, uncomment next 5 lines:
-        // if (!cred.user.emailVerified) {
-        //   await signOut(auth);
-        //   alert('Verify your email first.');
-        //   return;
-        // }
+        await signInWithEmailAndPassword(auth, email, pass);
+        // To require verification before showing the app, switch the onAuthStateChanged logic below.
       } catch (e) {
         console.error(e); alert(e.message || 'Login failed.');
       } finally { login.disabled = false; }
     });
   }
+
   if (logout){
-    logout.addEventListener('click', async () => { try { await signOut(auth); } catch(e){ console.error(e); } });
+    logout.addEventListener('click', async () => {
+      try { await signOut(auth); } catch(e){ console.error(e); }
+    });
   }
 }
 
-// ===== Form =====
+/* ===== Form ===== */
 function bindForm(){
   const form = $('#debt-form');
   if (!form) return;
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+
     const item = {
       id: null,
       name: $('#debt-name')?.value.trim() || '',
-      original: parseFloat($('#original-amount')?.value || '0') || 0,
-      balance:  parseFloat($('#balance')?.value || '0') || 0,
-      paid:     parseFloat($('#amount-paid')?.value || '0') || 0,
-      apr:      parseFloat($('#apr')?.value || '0') || 0,
-      minPayment: parseFloat($('#min-payment')?.value || '0') || 0,
+      original:  parseFloat($('#original-amount')?.value || '0') || 0,
+      balance:   parseFloat($('#balance')?.value || '0') || 0,
+      paid:      parseFloat($('#amount-paid')?.value || '0') || 0,
+      apr:       parseFloat($('#apr')?.value || '0') || 0,
+      minPayment:parseFloat($('#min-payment')?.value || '0') || 0,
       due: $('#due-date')?.value || todayISO(),
       createdAt: Date.now()
     };
+
+    // Infer balance if omitted
     if (!($('#balance')?.value) && item.original >= 0 && item.paid >= 0) {
       const inferred = Math.max(item.original - item.paid, 0);
       item.balance = isFinite(inferred) ? inferred : 0;
     }
+
     debts.push(item);
-    if (user) await saveItemToCloud(user.uid, item); else saveToLocal();
+
+    try {
+      if (user) await saveItemToCloud(user.uid, item);
+      else saveToLocal();
+    } catch (e) {
+      console.warn('Cloud save failed; saved locally instead.', e);
+      saveToLocal();
+    }
+
     e.target.reset?.();
     const due = $('#due-date'); if (due) due.value = todayISO();
     render();
   });
 }
 
-// ===== Render =====
+/* ===== Render ===== */
 function render(){
   const tbody = document.querySelector('#debt-table tbody');
   if (!tbody) return;
@@ -137,9 +166,12 @@ function render(){
   let totOriginal = 0, totBalance = 0, totPaid = 0, totMin = 0;
 
   debts.slice().sort((a,b)=>(a.due||'').localeCompare(b.due||'')).forEach((d, idx) => {
-    totOriginal += d.original||0; totBalance += d.balance||0;
-    totPaid += d.paid||0; totMin += d.minPayment||0;
-    const percentPaid = d.original>0 ? (100*(d.paid||0)/d.original) : 0;
+    totOriginal += d.original     || 0;
+    totBalance  += d.balance      || 0;
+    totPaid     += d.paid         || 0;
+    totMin      += d.minPayment   || 0;
+
+    const percentPaid = d.original > 0 ? (100 * (d.paid || 0) / d.original) : 0;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -166,19 +198,27 @@ function render(){
       const i = Number(e.currentTarget.getAttribute('data-idx'));
       const item = debts[i];
       debts.splice(i, 1);
-      if (user && item?.id) await deleteItemFromCloud(user.uid, item.id);
-      else saveToLocal();
+
+      try {
+        if (user && item?.id) await deleteItemFromCloud(user.uid, item.id);
+        else saveToLocal();
+      } catch (err) {
+        console.warn('Cloud delete failed; updating local only.', err);
+        saveToLocal();
+      }
+
       render();
     });
   });
 }
 
-// ===== UI gate =====
+/* ===== UI gate ===== */
 function showApp(authed){
   const authPanel = $('#auth');
   const debtForm  = $('#debt-form');
   const logoutBtn = $('#logout');
   if (!authPanel || !debtForm || !logoutBtn) return;
+
   if (authed){
     authPanel.style.display = 'none';
     debtForm.style.display  = 'block';
@@ -190,25 +230,35 @@ function showApp(authed){
   }
 }
 
-// ===== Startup =====
-document.addEventListener('DOMContentLoaded', async () => {
+/* ===== Startup ===== */
+document.addEventListener('DOMContentLoaded', () => {
   const dueInput = $('#due-date');
   if (dueInput && !dueInput.value) dueInput.value = todayISO();
   bindAuthButtons();
   bindForm();
-  loadFromLocal(); // show something immediately while auth resolves
+  // Show local data immediately while auth resolves
+  loadFromLocal(); 
   render();
 });
 
 onAuthStateChanged(auth, async (u) => {
-  // Allow unverified users to see the app; change to (u && u.emailVerified) if you want to gate it.
+  // CURRENT: allow unverified users. To require verification, replace with:
+  // user = (u && u.emailVerified) ? u : null;
   user = u || null;
+
   try {
-    if (user) await loadFromCloud(user.uid); else loadFromLocal();
+    if (user && db) {
+      await loadFromCloud(user.uid);
+      notify('Loaded debts from Firestore.');
+    } else {
+      loadFromLocal();
+      if (!db && user) notify('Firestore disabled (config incomplete). Using local only.');
+    }
   } catch (e) {
-    console.warn('Cloud load failed, using local.', e);
+    console.warn('Cloud load failed; using local.', e);
     loadFromLocal();
   }
+
   showApp(!!user);
   render();
 });
